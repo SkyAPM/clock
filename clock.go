@@ -241,7 +241,7 @@ func (m *Mock) removeClockTimer(t clockTimer) {
 			break
 		}
 	}
-	sort.Sort(m.timers)
+	// sort.Sort(m.timers)
 }
 
 // clockTimer represents an object with an associated start time.

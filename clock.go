@@ -126,6 +126,26 @@ func (m *Mock) Set(t time.Time) {
 	gosched()
 }
 
+func (m *Mock) TriggerTimer() bool {
+	m.mu.Lock()
+
+	// Sort timers by time.
+	sort.Sort(m.timers)
+
+	// If we have no more timers then exit.
+	if len(m.timers) == 0 {
+		m.mu.Unlock()
+		gosched()
+		return false
+	}
+	t := m.timers[0]
+	m.mu.Unlock()
+
+	// Execute timer.
+	t.Tick(m.now, false)
+	return true
+}
+
 // runNextTimer executes the next timer in chronological order and moves the
 // current time to the timer's next tick time. The next time is not executed if
 // its next time is after the max time. Returns true if a timer was executed.
@@ -153,7 +173,7 @@ func (m *Mock) runNextTimer(max time.Time) bool {
 	m.mu.Unlock()
 
 	// Execute timer.
-	t.Tick(m.now)
+	t.Tick(m.now, true)
 	return true
 }
 
@@ -247,7 +267,7 @@ func (m *Mock) removeClockTimer(t clockTimer) {
 // clockTimer represents an object with an associated start time.
 type clockTimer interface {
 	Next() time.Time
-	Tick(time.Time)
+	Tick(time.Time, bool)
 }
 
 // clockTimers represents a list of sortable timers.
@@ -305,7 +325,7 @@ func (t *Timer) Reset(d time.Duration) bool {
 type internalTimer Timer
 
 func (t *internalTimer) Next() time.Time { return t.next }
-func (t *internalTimer) Tick(now time.Time) {
+func (t *internalTimer) Tick(now time.Time, toNext bool) {
 	// a gosched() after ticking, to allow any consequences of the
 	// tick to complete
 	defer gosched()
@@ -316,6 +336,10 @@ func (t *internalTimer) Tick(now time.Time) {
 		defer t.fn()
 	} else {
 		t.c <- now
+	}
+	if !toNext {
+		t.mock.mu.Unlock()
+		return
 	}
 	t.mock.removeClockTimer((*internalTimer)(t))
 	t.stopped = true
@@ -360,13 +384,16 @@ func (t *Ticker) Reset(dur time.Duration) {
 type internalTicker Ticker
 
 func (t *internalTicker) Next() time.Time { return t.next }
-func (t *internalTicker) Tick(now time.Time) {
+func (t *internalTicker) Tick(now time.Time, toNext bool) {
+	defer gosched()
 	select {
 	case t.c <- now:
 	default:
 	}
+	if !toNext {
+		return
+	}
 	t.next = now.Add(t.d)
-	gosched()
 }
 
 // Sleep momentarily so that other goroutines can process.

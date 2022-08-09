@@ -128,6 +128,31 @@ func TestClock_Ticker_Rst(t *testing.T) {
 	ticker.Stop()
 }
 
+// Ensure that the clock's ticker can be triggered from outside
+func TestClock_Ticker_Trigger(t *testing.T) {
+	clock := NewMock()
+	now := clock.Now()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		ticker := clock.Ticker(1 * time.Hour)
+		defer func() {
+			ticker.Stop()
+			wg.Done()
+		}()
+		for t := range ticker.C {
+			if t == now {
+				break
+			}
+		}
+	}()
+	for !clock.TriggerTimer() {
+		time.Sleep(100 * time.Millisecond)
+	}
+	wg.Wait()
+}
+
 // Ensure that the clock's timer waits correctly.
 func TestClock_Timer(t *testing.T) {
 	start := time.Now()
